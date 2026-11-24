@@ -1,5 +1,6 @@
-import { ChannelType, Client, Events, GatewayIntentBits, MessageFlags, PermissionFlagsBits } from 'discord.js'
+import { ActivityType, ChannelType, Client, Events, GatewayIntentBits, MessageFlags, PermissionFlagsBits } from 'discord.js'
 import { isSnowflake } from './config.js'
+import { handleTrainingCommand, trainingCommands } from './training-commands.js'
 import {
   applicationModal, noMentions, profiles, requiresClass, reviewPost, roleModal,
   statusLabels, verificationPost
@@ -28,7 +29,8 @@ function validateIds(values) {
 }
 
 export function createBot({ guildId, token }, store, client = new Client({
-  intents: [GatewayIntentBits.Guilds], allowedMentions: noMentions
+  intents: [GatewayIntentBits.Guilds], allowedMentions: noMentions,
+  presence: { activities: [{ type: ActivityType.Playing, name: 'Risolvere problemi' }] }
 })) {
   let work
   let timer
@@ -331,6 +333,10 @@ export function createBot({ guildId, token }, store, client = new Client({
 
   client.on(Events.ClientReady, () => {
     for (const server of client.guilds.cache.values()) void leaveOtherGuild(server)
+    for (const command of trainingCommands) {
+      void client.application.commands.create(command, guildId)
+        .catch(error => logError(`Registrazione di /${command.name}`, error))
+    }
     timer ??= setInterval(runWork, 5_000)
     runWork()
     refreshPanel()
@@ -350,9 +356,11 @@ export function createBot({ guildId, token }, store, client = new Client({
   })
   client.on(Events.Error, error => logError('Connessione Discord', error))
   client.on(Events.InteractionCreate, async interaction => {
-    if (stopping || interaction.guildId !== guildId || !interaction.customId || !interaction.member) return
-    const [kind, action, id] = interaction.customId.split(':')
+    if (stopping || interaction.guildId !== guildId || !interaction.member) return
     try {
+      if (interaction.isChatInputCommand?.()) return await handleTrainingCommand(interaction, store, logError)
+      if (!interaction.customId) return
+      const [kind, action, id] = interaction.customId.split(':')
       if (kind === 'verify') await intake(interaction, action, id)
       if (kind === 'review') await review(interaction, action, id)
     } catch (error) {

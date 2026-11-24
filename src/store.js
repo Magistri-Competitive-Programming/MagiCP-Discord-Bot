@@ -30,6 +30,10 @@ export function openStore(directory, guildId) {
       user_id TEXT PRIMARY KEY,
       status TEXT NOT NULL CHECK (status IN ('accepted', 'external'))
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS training_accounts (
+      user_id TEXT PRIMARY KEY,
+      username TEXT NOT NULL
+    ) STRICT;
     CREATE TABLE IF NOT EXISTS applications (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -70,6 +74,11 @@ export function openStore(directory, guildId) {
   const get = db.prepare('SELECT * FROM applications WHERE id = ?')
   const current = db.prepare("SELECT * FROM applications WHERE user_id = ? AND status <> 'rejected'")
   const verified = db.prepare('SELECT status FROM verified_accounts WHERE user_id = ?')
+  const trainingAccount = db.prepare('SELECT username FROM training_accounts WHERE user_id = ?')
+  const saveTrainingAccount = db.prepare(`
+    INSERT INTO training_accounts (user_id, username) VALUES (?, ?)
+    ON CONFLICT (user_id) DO UPDATE SET username = excluded.username
+  `)
   const insert = db.prepare(`
     INSERT INTO applications (id, user_id, name, profile, school_class, competitions, awards, created_at)
     SELECT ?, ?, ?, ?, ?, ?, ?, ?
@@ -122,6 +131,8 @@ export function openStore(directory, guildId) {
     savePanel: panel => writeSetting.run('panel', JSON.stringify(panel)),
     get: id => get.get(id),
     current: user => current.get(user) ?? verified.get(user),
+    trainingUsername: user => trainingAccount.get(user)?.username,
+    linkTraining: (user, username) => saveTrainingAccount.run(user, username),
     create(user, answers) {
       const id = randomBytes(12).toString('hex')
       const { name, profile, schoolClass, competitions, awards } = answers

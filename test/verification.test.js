@@ -105,6 +105,7 @@ test('verifica Discord con permessi staff, deduplica e assegnazione dei tre esit
   const client = new EventEmitter()
   Object.assign(client, {
     user: { id: me.id },
+    application: { commands: { create: async () => {} } },
     isReady: () => true,
     guilds: { cache: new Map([[guildId, guild], ['other', { id: 'other', leave: async () => { left = true } }]]) },
     login: async () => client.emit(Events.ClientReady),
