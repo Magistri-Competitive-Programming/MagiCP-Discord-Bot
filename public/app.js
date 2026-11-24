@@ -38,6 +38,7 @@ function showLogin() {
   byId('approval-roles').replaceChildren()
   byId('reviewer-roles').replaceChildren()
   byId('panel-link').removeAttribute('href')
+  byId('verification-action').removeAttribute('href')
   byId('loading').hidden = true
   byId('workspace').hidden = true
   byId('login-page').hidden = false
@@ -82,26 +83,30 @@ function renderOverview() {
   message('queue-error', errors ? 'Alcune operazioni Discord sono in attesa di un nuovo tentativo. Controlla i dettagli nelle richieste.' : '')
   byId('request-list').replaceChildren(...recent.map(request => {
     const row = element('tr')
-    const status = element('td', request.label, `status ${request.status}`)
+    const date = day.format(request.createdAt)
+    const candidate = element('td', request.name)
+    candidate.append(element('small', `${request.profile} · ${date}`, 'request-meta'))
+    const status = element('td')
+    status.append(element('span', request.label, `status ${request.status}`))
     if (request.error) status.append(element('small', request.error))
     const action = element('td')
     if (request.url) {
-      const link = element('a', 'Discord ↗')
+      const link = element('a', '↗', 'request-link')
       link.href = request.url
       link.target = '_blank'
       link.rel = 'noopener'
       link.setAttribute('aria-label', `Apri la richiesta di ${request.name} su Discord`)
+      link.title = 'Apri su Discord'
       action.append(link)
     }
-    row.append(element('td', request.name), element('td', request.profile), status,
-      element('td', day.format(request.createdAt)), action)
+    row.append(candidate, element('td', request.profile, 'request-profile'), status,
+      element('td', date, 'request-date'), action)
     return row
   }))
   byId('table-wrap').hidden = !recent.length
   byId('empty').hidden = Boolean(recent.length)
   byId('empty-description').textContent = panel ? 'Le candidature inviate su Discord compariranno qui.' :
     'Le candidature arriveranno qui dopo la pubblicazione del messaggio di verifica.'
-  byId('setup-link').hidden = Boolean(panel)
   renderPublish()
 }
 
@@ -111,9 +116,21 @@ function renderPublish() {
   byId('publish').disabled = !bot.ready || !settings.verificationChannel
   byId('publish').textContent = hasCurrentPanel ? 'Aggiorna messaggio' : 'Pubblica messaggio'
   byId('publish-description').textContent = hasCurrentPanel ? 'Il pulsante di verifica è pubblicato su Discord.' :
-    'Pubblica il pulsante nel canale di verifica configurato.'
+    settings.verificationChannel ? 'Pubblica il pulsante nel canale di verifica configurato.' :
+      'Salva la configurazione per pubblicare il pulsante su Discord.'
   byId('panel-link').hidden = !hasCurrentPanel
-  if (hasCurrentPanel) byId('panel-link').href = `https://discord.com/channels/${guildId}/${panel.channel}/${panel.message}`
+  const discordUrl = hasCurrentPanel ? `https://discord.com/channels/${guildId}/${panel.channel}/${panel.message}` : null
+  if (discordUrl) byId('panel-link').href = discordUrl
+  const action = byId('verification-action')
+  const arrow = element('span', '↗')
+  arrow.setAttribute('aria-hidden', 'true')
+  action.replaceChildren(discordUrl ? 'Apri su Discord' : 'Configura la verifica', arrow)
+  action.href = discordUrl ?? '#configurazione'
+  action.target = discordUrl ? '_blank' : ''
+  action.rel = discordUrl ? 'noopener' : ''
+  byId('verification-state').textContent = discordUrl
+    ? 'Il pulsante è pubblicato nel canale Discord.'
+    : 'Il pulsante di verifica è ancora da pubblicare.'
 }
 
 function renderOptions({ channels, roles }) {

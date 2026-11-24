@@ -18,50 +18,52 @@ export const statusLabels = {
   rejected: 'Rifiutata'
 }
 
-const accent = 0xfa785f
 export const noMentions = { parse: [] }
 const button = (id, text, style) => new ButtonBuilder().setCustomId(id).setLabel(text).setStyle(style)
 
-export function verificationPost() {
+function brandedEmbed({ color, icon }) {
+  const embed = new EmbedBuilder().setAuthor({ name: 'MagiCP · Verifiche', iconURL: icon ?? undefined })
+  if (color) embed.setColor(color)
+  return embed
+}
+
+export function verificationPost(appearance) {
   return {
-    embeds: [new EmbedBuilder()
-      .setColor(accent)
-      .setTitle('Verifica MagiCP')
-      .setDescription('Non sei ancora stato verificato? Richiedi la verifica ora.')],
+    embeds: [brandedEmbed(appearance)
+      .setTitle('Richiedi la verifica')
+      .setDescription('Non sei ancora stato verificato? Richiedi la verifica ora e fatti assegnare i ruoli per il tuo profilo.')
+      .addFields(
+        { name: 'Compila il modulo', value: 'Premi **Verifica**, scegli il tuo profilo e inserisci i tuoi dati. Puoi indicare le gare a cui hai partecipato e i riconoscimenti ottenuti.' },
+        { name: 'Attendi la revisione', value: 'La richiesta viene inviata al canale riservato allo staff. Dopo la valutazione, i ruoli approvati compaiono sul tuo profilo Discord nel server.' }
+      )],
     components: [new ActionRowBuilder().addComponents(button('verify:start', 'Verifica', ButtonStyle.Primary))],
     allowedMentions: noMentions
   }
 }
 
-export function profileSelection() {
-  const select = new StringSelectMenuBuilder()
-    .setCustomId('verify:profile')
-    .setPlaceholder('Scegli il tuo profilo')
-    .addOptions(Object.entries(profiles).map(([value, label]) => ({ label, value })))
-  return new ActionRowBuilder().addComponents(select)
-}
-
 export const requiresClass = profile => profile === 'student' || profile === 'competitor'
 
-function textField(id, label, style, maxLength, required, placeholder) {
-  return new LabelBuilder().setLabel(label).setTextInputComponent(
+function textField(id, label, style, maxLength, required, placeholder, description) {
+  const field = new LabelBuilder().setLabel(label).setTextInputComponent(
     new TextInputBuilder()
       .setCustomId(id).setStyle(style).setMaxLength(maxLength).setRequired(required).setPlaceholder(placeholder)
   )
+  if (description) field.setDescription(description)
+  return field
 }
 
-export function applicationModal(profile) {
-  const modal = new ModalBuilder().setCustomId(`verify:apply:${profile}`).setTitle('Richiesta di verifica')
-  modal.addLabelComponents(
-    textField('name', 'Nome e cognome', TextInputStyle.Short, 100, true, 'Mario Rossi')
-  )
-  if (requiresClass(profile)) {
-    modal.addLabelComponents(textField('class', 'Classe', TextInputStyle.Short, 24, true, '3B'))
-  }
-  return modal.addLabelComponents(
-    textField('competitions', 'Competizioni a cui hai partecipato', TextInputStyle.Paragraph, 850, false, 'Una competizione per riga'),
-    textField('awards', 'Medaglie o altri riconoscimenti', TextInputStyle.Paragraph, 500, false, 'Es. bronzo alle OII')
-  )
+export function applicationModal() {
+  const select = new StringSelectMenuBuilder()
+    .setCustomId('profile').setPlaceholder('Scegli il profilo che ti descrive').setRequired(true)
+    .addOptions(Object.entries(profiles).map(([value, label]) => ({ label, value })))
+  return new ModalBuilder().setCustomId('verify:apply').setTitle('Verifica MagiCP')
+    .addLabelComponents(
+      new LabelBuilder().setLabel('Profilo').setStringSelectMenuComponent(select),
+      textField('name', 'Nome e cognome', TextInputStyle.Short, 100, true, 'Mario Rossi'),
+      textField('class', 'Classe', TextInputStyle.Short, 24, false, 'Es. 3B', 'Obbligatoria per Studente e Studente in gara.'),
+      textField('competitions', 'Competizioni a cui hai partecipato', TextInputStyle.Paragraph, 850, false, 'Una competizione per riga, con l’anno se lo ricordi'),
+      textField('awards', 'Medaglie o altri riconoscimenti', TextInputStyle.Paragraph, 500, false, 'Es. bronzo alle OII')
+    )
 }
 
 export function roleModal(id, roles) {
@@ -73,26 +75,29 @@ export function roleModal(id, roles) {
     .addLabelComponents(new LabelBuilder().setLabel('Ruoli da assegnare').setStringSelectMenuComponent(select))
 }
 
-export function reviewPost(request) {
-  const clean = value => value ? escapeMarkdown(value).replaceAll('@', '@\u200b').slice(0, 1000) : '—'
-  const embed = new EmbedBuilder()
-    .setColor(request.status === 'rejected' ? 0x8c8684 : accent)
+export function reviewPost(request, appearance) {
+  const clean = value => escapeMarkdown(value).replaceAll('@', '@\u200b').slice(0, 1000)
+  const status = statusLabels[request.status]
+  const embed = brandedEmbed(appearance)
     .setTitle('Richiesta di verifica')
-    .setDescription(`Account Discord · <@${request.user_id}>`)
+    .setDescription(request.status === 'pending'
+      ? 'Esamina i dati del candidato e scegli come procedere.'
+      : `Esito della candidatura: **${status}**.`)
     .addFields(
       { name: 'Nome e cognome', value: clean(request.name), inline: true },
       { name: 'Profilo', value: profiles[request.profile], inline: true },
-      { name: 'Classe', value: clean(request.school_class), inline: true },
-      { name: 'Competizioni', value: clean(request.competitions) },
-      { name: 'Medaglie e riconoscimenti', value: clean(request.awards) }
+      { name: 'Account Discord', value: `<@${request.user_id}>`, inline: true },
+      { name: 'Classe', value: clean(request.school_class) || 'Non indicata', inline: true },
+      { name: 'Competizioni', value: clean(request.competitions) || 'Nessuna indicata' },
+      { name: 'Medaglie e riconoscimenti', value: clean(request.awards) || 'Nessuno indicato' }
     )
-    .setFooter({ text: statusLabels[request.status] })
+    .setFooter({ text: `${status} · Richiesta ${request.id.slice(0, 8)}` })
     .setTimestamp(request.created_at)
   if (request.reviewer && request.status !== 'processing') {
     const roles = JSON.parse(request.role_ids)
     embed.addFields({ name: 'Decisione', value: [
-      `${statusLabels[request.status]} da <@${request.reviewer}>`,
-      roles.length && roles.map(id => `<@&${id}>`).join(', ')
+      `Revisore: <@${request.reviewer}>`,
+      roles.length && `Ruoli assegnati: ${roles.map(id => `<@&${id}>`).join(', ')}`
     ].filter(Boolean).join('\n') })
   }
   const actions = new ActionRowBuilder().addComponents(

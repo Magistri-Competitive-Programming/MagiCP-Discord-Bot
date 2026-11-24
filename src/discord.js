@@ -1,7 +1,7 @@
 import { ChannelType, Client, Events, GatewayIntentBits, MessageFlags, PermissionFlagsBits } from 'discord.js'
 import { isSnowflake } from './config.js'
 import {
-  applicationModal, noMentions, profileSelection, profiles, requiresClass, reviewPost, roleModal,
+  applicationModal, noMentions, profiles, requiresClass, reviewPost, roleModal,
   statusLabels, verificationPost
 } from './verification-ui.js'
 
@@ -11,6 +11,7 @@ const staffPermissions = [
   P.ManageMessages, P.ManageThreads, P.KickMembers, P.BanMembers, P.ModerateMembers, P.ViewAuditLog
 ]
 const messagePermissions = [P.ViewChannel, P.SendMessages, P.EmbedLinks, P.ReadMessageHistory]
+const appearance = ({ current, me }) => ({ color: me.displayColor, icon: current.iconURL({ size: 128 }) })
 
 export class InputError extends Error {}
 
@@ -124,22 +125,24 @@ export function createBot({ guildId, token }, store, client = new Client({
     return store.settings()
   }
 
-  async function publish() {
+  async function publish({ existingOnly = false } = {}) {
+    const { verificationChannel } = store.settings()
+    const previous = store.panel()
+    if (existingOnly && (publishing || !previous || previous.channel !== verificationChannel)) return
     if (publishing) throw new InputError('Pubblicazione già in corso.')
+    if (!verificationChannel) throw new InputError('Salva i canali e i ruoli prima di pubblicare.')
     publishing = true
     try {
-      const { verificationChannel } = store.settings()
-      if (!verificationChannel) throw new InputError('Salva i canali e i ruoli prima di pubblicare.')
       const state = await serverState()
       const channel = checkChannel(await state.current.channels.fetch(verificationChannel, { force: true }), state)
-      const previous = store.panel()
-      const content = verificationPost()
+      const content = verificationPost(appearance(state))
       let message
       if (previous?.channel === channel.id) {
         message = await channel.messages.edit(previous.message, content).catch(error => {
           if (error.code !== 10008) throw error
         })
       }
+      if (existingOnly && !message) return
       message ??= await channel.send(content)
       const panel = { channel: channel.id, message: message.id }
       store.savePanel(panel)
@@ -183,7 +186,7 @@ export function createBot({ guildId, token }, store, client = new Client({
         const channel = await state.current.channels.fetch(destination, { force: true })
         if (channel) {
           const privateChannel = checkChannel(channel, state, settings.reviewerRoles)
-          await privateChannel.messages.edit(request.review_message, reviewPost(request))
+          await privateChannel.messages.edit(request.review_message, reviewPost(request, appearance(state)))
         }
       } catch (error) {
         if (![10003, 10008].includes(error.code)) throw error
@@ -195,7 +198,7 @@ export function createBot({ guildId, token }, store, client = new Client({
     const channel = checkChannel(
       await state.current.channels.fetch(destination, { force: true }), state, settings.reviewerRoles
     )
-    const message = await channel.send({ ...reviewPost(request), nonce: request.id, enforceNonce: true })
+    const message = await channel.send({ ...reviewPost(request, appearance(state)), nonce: request.id, enforceNonce: true })
     store.delivered(request.id, channel.id, message.id)
   }
 
@@ -221,42 +224,38 @@ export function createBot({ guildId, token }, store, client = new Client({
   }
 
   const reply = (interaction, content) => interaction.reply({ content, flags: MessageFlags.Ephemeral })
-  const validPanel = interaction => {
+  async function intake(interaction, action, previousProfile) {
     const panel = store.panel()
-    return interaction.channelId === store.settings().verificationChannel && panel?.channel === interaction.channelId
-  }
-
-  async function intake(interaction, action, profile) {
-    if (!validPanel(interaction) ||
-        (action === 'start' && interaction.message?.id !== store.panel().message)) {
+    if (!panel || panel.channel !== interaction.channelId || panel.channel !== store.settings().verificationChannel ||
+        (!previousProfile && interaction.message?.id !== panel.message)) {
       return reply(interaction, 'Usa il messaggio di verifica attuale.')
     }
     const application = store.current(interaction.user.id)
     if (application) return reply(interaction, `Hai già una richiesta. Stato: ${statusLabels[application.status]}.`)
 
     if (action === 'start' && interaction.isButton()) {
-      return interaction.reply({
-        content: 'Scegli il profilo che ti descrive per aprire il modulo.',
-        components: [profileSelection()],
-        flags: MessageFlags.Ephemeral
-      })
+      return interaction.showModal(applicationModal())
     }
-    if (action === 'profile' && interaction.isStringSelectMenu() && Object.hasOwn(profiles, interaction.values[0])) {
-      return interaction.showModal(applicationModal(interaction.values[0]))
-    }
-    if (action !== 'apply' || !interaction.isModalSubmit() || !Object.hasOwn(profiles, profile)) return
+    if (action !== 'apply' || !interaction.isModalSubmit()) return
+    // Modals opened before a redeploy can still carry their profile in the custom ID.
+    const profile = previousProfile ?? interaction.fields.getStringSelectValues('profile')[0]
+    if (!Object.hasOwn(profiles, profile)) return reply(interaction, 'Seleziona un profilo nel modulo di verifica.')
 
     const read = key => interaction.fields.getTextInputValue(key).trim()
     const name = read('name')
     const schoolClass = requiresClass(profile) ? read('class') : ''
     const competitions = read('competitions')
     const awards = read('awards')
-    if (!name || name.length > 100 || (requiresClass(profile) && !schoolClass) ||
-        schoolClass.length > 24 || competitions.length > 850 || awards.length > 500) {
+    if (requiresClass(profile) && !schoolClass) {
+      return reply(interaction, 'Per questo profilo serve la classe. Premi Verifica e inseriscila nel modulo.')
+    }
+    if (!name || name.length > 100 || schoolClass.length > 24 || competitions.length > 850 || awards.length > 500) {
       return reply(interaction, 'Controlla i campi del modulo e riprova dal pulsante Verifica.')
     }
     const created = store.create(interaction.user.id, { name, profile, schoolClass, competitions, awards })
-    await reply(interaction, created ? 'Richiesta registrata. Lo staff la valuterà.' : 'Hai già una richiesta.')
+    await reply(interaction, created
+      ? '**Richiesta inviata.** Lo staff la valuterà e ti assegnerà i ruoli approvati sul server.'
+      : 'Hai già una richiesta.')
     runWork()
   }
 
@@ -306,12 +305,30 @@ export function createBot({ guildId, token }, store, client = new Client({
     await server.leave().catch(error => logError('Uscita da un server non autorizzato', error))
   }
 
+  function refreshPanel() {
+    if (stopping) return
+    void publish({ existingOnly: true }).catch(error => logError('Aggiornamento del messaggio di verifica', error))
+  }
+
   client.on(Events.ClientReady, () => {
     for (const server of client.guilds.cache.values()) void leaveOtherGuild(server)
     timer ??= setInterval(runWork, 5_000)
     runWork()
+    refreshPanel()
   })
   client.on(Events.GuildCreate, leaveOtherGuild)
+  client.on(Events.GuildRoleUpdate, (before, role) => {
+    if (role.guild.id === guildId && role.guild.members.me?.roles.cache.has(role.id) &&
+        (before.color !== role.color || before.rawPosition !== role.rawPosition)) refreshPanel()
+  })
+  client.on(Events.GuildRoleDelete, role => {
+    if (role.guild.id === guildId && role.color) refreshPanel()
+  })
+  client.on(Events.GuildMemberUpdate, (before, member) => {
+    if (member.guild.id === guildId && member.id === client.user.id && before.displayColor !== member.displayColor) {
+      refreshPanel()
+    }
+  })
   client.on(Events.Error, error => logError('Connessione Discord', error))
   client.on(Events.InteractionCreate, async interaction => {
     if (stopping || interaction.guildId !== guildId || !interaction.customId || !interaction.member) return

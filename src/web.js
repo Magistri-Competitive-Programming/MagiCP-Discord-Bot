@@ -6,6 +6,7 @@ import { InputError, logError } from './discord.js'
 import { profiles, statusLabels } from './verification-ui.js'
 
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url))
+const panelFont = fileURLToPath(import.meta.resolve('@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2'))
 const lifetime = 8 * 60 * 60 * 1000
 
 export function createWeb(config, store, bot) {
@@ -32,6 +33,7 @@ export function createWeb(config, store, bot) {
     next()
   })
   app.get('/health', (req, res) => res.type('text').send('ok'))
+  app.get('/assets/manrope.woff2', (req, res) => res.sendFile(panelFont, { maxAge: '1d' }))
 
   auth.use((req, res, next) => {
     res.set('Cache-Control', 'no-store')

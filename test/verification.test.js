@@ -67,7 +67,7 @@ test('verifica Discord con permessi staff, deduplica e assegnazione dei tre esit
   let messageId = 30
   const permissions = bits => new PermissionsBitField(bits)
   const all = permissions(PermissionFlagsBits.Administrator)
-  const me = { id: snowflake(18), permissions: all, roles: { highest: { comparePositionTo: () => 1 } } }
+  const me = { id: snowflake(18), displayColor: 0x37a59b, permissions: all, roles: { highest: { comparePositionTo: () => 1 } } }
   const roles = new Map([guildId, external, student, staff, competitor].map(id => [id, { id, name: id, permissions: permissions(0n) }]))
   const channel = id => ({
     id,
@@ -86,6 +86,7 @@ test('verifica Discord con permessi staff, deduplica e assegnazione dei tre esit
   const channels = new Map([verification, review].map(id => [id, channel(id)]))
   const guild = {
     id: guildId, name: 'MagiCP', available: true,
+    iconURL: () => 'https://cdn.discordapp.com/icons/example.png',
     roles: { fetch: async () => roles, cache: roles },
     members: {
       me,
@@ -96,6 +97,7 @@ test('verifica Discord con permessi staff, deduplica e assegnazione dei tre esit
   }
   const client = new EventEmitter()
   Object.assign(client, {
+    user: { id: me.id },
     isReady: () => true,
     guilds: { cache: new Map([[guildId, guild], ['other', { id: 'other', leave: async () => { left = true } }]]) },
     login: async () => client.emit(Events.ClientReady),
@@ -119,13 +121,20 @@ test('verifica Discord con permessi staff, deduplica e assegnazione dei tre esit
   const panel = await bot.publish()
   assert.equal((await bot.publish()).message, panel.message)
   assert.equal(sent.length, 1)
+  assert.equal(sent[0].content.embeds[0].toJSON().color, me.displayColor)
+  const previousColor = me.displayColor
+  me.displayColor = 0x634ae4
+  client.emit(Events.GuildMemberUpdate, { displayColor: previousColor }, { id: me.id, guild, displayColor: me.displayColor })
+  await eventually(() => edited.at(-1)?.content.embeds[0].toJSON().color === me.displayColor)
+  assert.equal(edited.at(-1).message, panel.message)
+  assert.equal(sent.length, 1)
 
   const listener = client.listeners(Events.InteractionCreate)[0]
   async function interact({ customId, id, message, channelId, type, roles = [], values, answers, server = guildId }) {
     const interaction = {
       customId, guildId: server, channelId, user: { id }, member: { roles },
       message: { id: message }, memberPermissions: permissions(0n), values, isButton: () => type === 'button',
-      isStringSelectMenu: () => type === 'select', isModalSubmit: () => type === 'modal',
+      isModalSubmit: () => type === 'modal',
       fields: { getTextInputValue: key => answers[key], getStringSelectValues: () => values },
       reply: async response => { interaction.result = response; interaction.replied = true },
       showModal: async modal => { interaction.result = modal.toJSON() },
@@ -139,20 +148,29 @@ test('verifica Discord con permessi staff, deduplica e assegnazione dei tre esit
   const user = snowflake(40)
   const intake = { id: user, channelId: verification, message: panel.message }
   assert.equal(await interact({ ...intake, customId: 'verify:start', type: 'button', server: 'other' }), undefined)
-  const start = await interact({ ...intake, customId: 'verify:start', type: 'button' })
-  assert.equal(start.components[0].toJSON().components[0].options.length, 4)
-  const form = await interact({ ...intake, customId: 'verify:profile', type: 'select', values: ['student'] })
-  assert.ok(form.components.find(label => label.component.custom_id === 'class').component.required)
+  const form = await interact({ ...intake, customId: 'verify:start', type: 'button' })
+  assert.equal(form.custom_id, 'verify:apply')
+  assert.deepEqual(form.components.map(label => label.component.custom_id), ['profile', 'name', 'class', 'competitions', 'awards'])
+  assert.equal(form.components[0].component.options.length, 4)
+  const incomplete = await interact({
+    ...intake, customId: form.custom_id, type: 'modal', values: ['student'],
+    answers: { name: 'Mario Rossi', class: '', competitions: '', awards: '' }
+  })
+  assert.match(incomplete.content, /serve la classe/)
+  assert.equal(store.current(user), undefined)
 
   for (const [index, outcome] of ['accepted', 'external', 'rejected'].entries()) {
     const id = snowflake(40 + index)
+    const profile = outcome === 'external' ? 'external' : 'student'
     const application = {
-      ...intake, id, customId: 'verify:apply:student', type: 'modal',
-      answers: { name: 'Mario Rossi', class: '3B', competitions: 'OII', awards: 'Bronzo' }
+      ...intake, id, customId: form.custom_id, type: 'modal', values: [profile],
+      answers: { name: 'Mario Rossi', class: profile === 'student' ? '3B' : '', competitions: 'OII', awards: 'Bronzo' }
     }
     await interact(application)
     await eventually(() => store.current(id)?.review_message)
     const request = store.current(id)
+    assert.equal(request.profile, profile)
+    assert.equal(sent.at(-1).content.embeds[0].toJSON().color, me.displayColor)
     const decision = { id: reviewer, message: request.review_message, channelId: review, roles: [staff], type: 'button' }
     if (outcome === 'accepted') {
       const unauthorized = await interact({ ...decision, roles: [], customId: `review:accept:${request.id}` })
