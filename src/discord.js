@@ -202,6 +202,25 @@ export function createBot({ guildId, token }, store, client = new Client({
     store.delivered(request.id, channel.id, message.id)
   }
 
+  async function deleteReviewMessage(request) {
+    if (!request.review_message) return
+    const current = guild()
+    try {
+      const channel = await current.channels.fetch(request.review_channel, { force: true })
+      if (channel?.guildId === guildId && channel.type === ChannelType.GuildText) {
+        await channel.messages.delete(request.review_message)
+      } else {
+        throw new InputError('Il canale Discord della candidatura non è accessibile.')
+      }
+    } catch (error) {
+      if ([10003, 10008].includes(error.code)) return
+      if ([50001, 50013].includes(error.code)) {
+        throw new InputError('Il bot deve poter accedere al messaggio Discord per eliminare la candidatura.')
+      }
+      throw error
+    }
+  }
+
   function runWork() {
     if (work || stopping || !client.isReady()) return
     work = (async () => {
@@ -355,6 +374,7 @@ export function createBot({ guildId, token }, store, client = new Client({
     options,
     saveSettings,
     publish,
+    deleteReviewMessage,
     async stop() {
       stopping = true
       clearInterval(timer)

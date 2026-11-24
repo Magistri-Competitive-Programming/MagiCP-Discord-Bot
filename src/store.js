@@ -10,6 +10,13 @@ const defaults = {
   approvalRoles: [],
   reviewerRoles: []
 }
+const dayLength = 86_400_000
+const localDay = new Intl.DateTimeFormat('sv-SE', {
+  timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit'
+})
+const searchKey = value => value.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
+const listColumns = 'id, name, profile, status, created_at, review_channel, review_message, work_error'
+export const closedStatuses = ['accepted', 'external', 'rejected']
 
 export function openStore(directory, guildId) {
   mkdirSync(directory, { recursive: true })
@@ -17,7 +24,12 @@ export function openStore(directory, guildId) {
   db.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA busy_timeout = 5000;
+    PRAGMA secure_delete = ON;
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
+    CREATE TABLE IF NOT EXISTS verified_accounts (
+      user_id TEXT PRIMARY KEY,
+      status TEXT NOT NULL CHECK (status IN ('accepted', 'external'))
+    ) STRICT;
     CREATE TABLE IF NOT EXISTS applications (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -41,6 +53,8 @@ export function openStore(directory, guildId) {
       WHERE status <> 'rejected';
     CREATE INDEX IF NOT EXISTS applications_recent ON applications (created_at DESC);
   `)
+  db.function('search_key', { deterministic: true }, searchKey)
+  db.function('local_day', { deterministic: true }, timestamp => localDay.format(timestamp))
 
   const readSetting = db.prepare('SELECT value FROM settings WHERE key = ?')
   const writeSetting = db.prepare(`
@@ -55,9 +69,11 @@ export function openStore(directory, guildId) {
 
   const get = db.prepare('SELECT * FROM applications WHERE id = ?')
   const current = db.prepare("SELECT * FROM applications WHERE user_id = ? AND status <> 'rejected'")
+  const verified = db.prepare('SELECT status FROM verified_accounts WHERE user_id = ?')
   const insert = db.prepare(`
     INSERT INTO applications (id, user_id, name, profile, school_class, competitions, awards, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    SELECT ?, ?, ?, ?, ?, ?, ?, ?
+    WHERE NOT EXISTS (SELECT 1 FROM verified_accounts WHERE user_id = ?)
     ON CONFLICT DO NOTHING
   `)
   const claim = db.prepare(`
@@ -82,10 +98,22 @@ export function openStore(directory, guildId) {
   const failed = db.prepare('UPDATE applications SET work_error = ?, retry_at = ? WHERE id = ?')
   const counts = db.prepare('SELECT status, COUNT(*) AS total FROM applications GROUP BY status')
   const errors = db.prepare('SELECT COUNT(*) AS total FROM applications WHERE work_error IS NOT NULL')
-  const recent = db.prepare(`
-    SELECT name, profile, status, created_at, review_channel, review_message, work_error
-    FROM applications ORDER BY created_at DESC LIMIT 20
+  const recent = db.prepare(`SELECT ${listColumns} FROM applications ORDER BY created_at DESC, id DESC LIMIT 5`)
+  const activity = db.prepare(`
+    SELECT local_day(created_at) AS day, COUNT(*) AS total
+    FROM applications WHERE created_at >= ? GROUP BY day
   `)
+  const filter = "WHERE (? = '' OR status = ?) AND (? = '' OR instr(search_key(name), ?) > 0 OR user_id = ?)"
+  const matches = db.prepare(`SELECT COUNT(*) AS total FROM applications ${filter}`)
+  const listing = db.prepare(`
+    SELECT ${listColumns} FROM applications ${filter}
+    ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?
+  `)
+  const remember = db.prepare(`
+    INSERT OR IGNORE INTO verified_accounts (user_id, status)
+    SELECT user_id, status FROM applications WHERE id = ? AND status IN ('accepted', 'external')
+  `)
+  const remove = db.prepare("DELETE FROM applications WHERE id = ? AND status IN ('accepted', 'external', 'rejected')")
 
   return {
     settings: () => ({ ...defaults, ...JSON.parse(readSetting.get('verification')?.value ?? '{}') }),
@@ -93,11 +121,11 @@ export function openStore(directory, guildId) {
     panel: () => JSON.parse(readSetting.get('panel')?.value ?? 'null'),
     savePanel: panel => writeSetting.run('panel', JSON.stringify(panel)),
     get: id => get.get(id),
-    current: user => current.get(user),
+    current: user => current.get(user) ?? verified.get(user),
     create(user, answers) {
       const id = randomBytes(12).toString('hex')
       const { name, profile, schoolClass, competitions, awards } = answers
-      return insert.run(id, user, name, profile, schoolClass, competitions, awards, Date.now()).changes === 1
+      return insert.run(id, user, name, profile, schoolClass, competitions, awards, Date.now(), user).changes === 1
     },
     claim: (id, reviewer, decision, roles) => claim.run(reviewer, decision, JSON.stringify(roles), id).changes === 1,
     work: () => work.all(Date.now()),
@@ -105,11 +133,38 @@ export function openStore(directory, guildId) {
     finished: id => finished.run(id),
     synced: id => synced.run(id),
     failed: (id, error) => failed.run(error, Date.now() + 60_000, id),
-    overview: () => ({
-      counts: Object.fromEntries(counts.all().map(({ status, total }) => [status, total])),
-      errors: errors.get().total,
-      recent: recent.all()
-    }),
+    overview() {
+      const today = Date.parse(localDay.format(Date.now()))
+      const days = Array.from({ length: 14 }, (_, index) => new Date(today - (13 - index) * dayLength).toISOString().slice(0, 10))
+      const totals = new Map(activity.all(Date.parse(days[0]) - dayLength).map(({ day, total }) => [day, total]))
+      return {
+        counts: Object.fromEntries(counts.all().map(({ status, total }) => [status, total])),
+        errors: errors.get().total,
+        recent: recent.all(),
+        activity: days.map(day => ({ day, total: totals.get(day) ?? 0 }))
+      }
+    },
+    applications({ status, query, page }) {
+      const key = searchKey(query)
+      const params = [status, status, key, key, query]
+      const pageSize = 20
+      const { total } = matches.get(...params)
+      const pages = Math.max(1, Math.ceil(total / pageSize))
+      page = Math.min(page, pages)
+      return { total, pages, page, items: listing.all(...params, pageSize, (page - 1) * pageSize) }
+    },
+    removeApplication(id) {
+      db.exec('BEGIN IMMEDIATE')
+      try {
+        remember.run(id)
+        const deleted = remove.run(id).changes === 1
+        db.exec('COMMIT')
+        return deleted
+      } catch (error) {
+        db.exec('ROLLBACK')
+        throw error
+      }
+    },
     close: () => db.close()
   }
 }

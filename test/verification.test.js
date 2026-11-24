@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { ChannelType, Events, PermissionFlagsBits, PermissionsBitField } from 'discord.js'
-import { createBot } from '../src/discord.js'
+import { createBot, InputError } from '../src/discord.js'
 import { openStore } from '../src/store.js'
 import { createWeb } from '../src/web.js'
 
@@ -62,6 +62,7 @@ test('verifica Discord con permessi staff, deduplica e assegnazione dei tre esit
   const assignments = []
   const sent = []
   const edited = []
+  const deleted = []
   let left = false
   let publicReview = true
   let messageId = 30
@@ -81,7 +82,13 @@ test('verifica Discord con permessi staff, deduplica e assegnazione dei tre esit
       sent.push(message)
       return message
     },
-    messages: { edit: async (message, content) => { edited.push({ message, content }); return { id: message } } }
+    messages: {
+      edit: async (message, content) => { edited.push({ message, content }); return { id: message } },
+      delete: async message => {
+        if (deleted.includes(message)) throw Object.assign(new Error('Unknown Message'), { code: 10008 })
+        deleted.push(message)
+      }
+    }
   })
   const channels = new Map([verification, review].map(id => [id, channel(id)]))
   const guild = {
@@ -189,15 +196,41 @@ test('verifica Discord con permessi staff, deduplica e assegnazione dei tre esit
   assert.deepEqual(assignments, [[user, student], [user, competitor], [snowflake(41), external]])
   assert.equal(sent.length, 4)
   assert.ok(edited.length)
+  const verified = store.current(user)
+  await bot.deleteReviewMessage(verified)
+  await bot.deleteReviewMessage(verified)
+  assert.deepEqual(deleted, [verified.review_message])
 })
 
-test('il pannello richiede sessione e origine corretta per le modifiche', async t => {
-  const store = { overview: () => ({ recent: [] }), settings: () => ({}), panel: () => null }
-  const bot = { status: () => ({ ready: false }), publish: () => ({ message: '1' }) }
+test('ricerca e rimozione protette delle candidature concluse', async t => {
+  const directory = storage()
+  const store = openStore(directory, guildId)
+  const answers = { name: 'Élia Rossi', profile: 'student', schoolClass: '3B', competitions: 'OII', awards: '' }
+  const accepted = snowflake(55)
+  const pending = snowflake(56)
+  store.create(accepted, answers)
+  store.create(pending, { ...answers, name: 'Mario Rossi' })
+  const { id } = store.current(accepted)
+  store.delivered(id, snowflake(57), snowflake(58))
+  store.claim(id, snowflake(59), 'accepted', [snowflake(60)])
+  store.finished(id)
+  const removedMessages = []
+  let discordAvailable = false
+  const bot = {
+    status: () => ({ ready: discordAvailable }),
+    deleteReviewMessage(request) {
+      if (!discordAvailable) throw new InputError('Discord scollegato.')
+      removedMessages.push(request.review_message)
+    }
+  }
   const config = { username: 'admin', password: 'temporary-check-only', origin: 'https://panel.example.test', secureCookie: true }
   const server = createWeb(config, store, bot).listen(0, '127.0.0.1')
   await new Promise(resolve => server.once('listening', resolve))
-  t.after(() => server.close())
+  t.after(async () => {
+    await new Promise(resolve => server.close(resolve))
+    store.close()
+    rmSync(directory, { force: true, recursive: true })
+  })
   const base = `http://127.0.0.1:${server.address().port}`
   const call = (path, options) => fetch(`${base}/api/${path}`, options)
   assert.equal((await call('overview')).status, 401)
@@ -209,8 +242,27 @@ test('il pannello richiede sessione e origine corretta per le modifiche', async 
   const issued = response.headers.get('set-cookie')
   assert.match(issued, /^__Host-magicp=.*; HttpOnly; Secure; SameSite=Strict$/)
   const Cookie = issued.split(';')[0]
-  assert.equal((await call('overview', { headers: { Cookie } })).status, 200)
+  const overview = await (await call('overview', { headers: { Cookie } })).json()
+  assert.equal(overview.activity.length, 14)
+  assert.equal(overview.activity.at(-1).total, 2)
+  const { items } = await (await call('applications?status=accepted&query=ELIA', { headers: { Cookie } })).json()
+  assert.deepEqual(items.map(item => [item.id, item.canDelete]), [[id, true]])
   assert.equal((await call('publish', { method: 'POST', headers: { Cookie } })).status, 403)
+  const remove = (requestId, headers) => call(`applications/${requestId}`, { method: 'DELETE', headers })
+  assert.equal((await remove(id, { Origin: config.origin })).status, 401)
+  assert.equal((await remove(id, { Cookie })).status, 403)
+  const authenticated = { Cookie, Origin: config.origin }
+  assert.equal((await remove(store.current(pending).id, authenticated)).status, 409)
+  assert.equal((await remove(id, authenticated)).status, 400)
+  assert.equal(store.get(id).name, answers.name)
+  discordAvailable = true
+  assert.equal((await remove(id, authenticated)).status, 204)
+  assert.equal((await remove(id, authenticated)).status, 204)
+  assert.deepEqual(removedMessages, [snowflake(58)])
+  assert.equal(store.get(id), undefined)
+  assert.deepEqual({ ...store.current(accepted) }, { status: 'accepted' })
+  assert.equal(store.create(accepted, answers), false)
+  assert.equal(store.applications({ status: '', query: '', page: 1 }).total, 1)
   assert.equal((await call('logout', { method: 'POST', headers: { Cookie, Origin: config.origin } })).status, 204)
   assert.equal((await call('overview', { headers: { Cookie } })).status, 401)
 })

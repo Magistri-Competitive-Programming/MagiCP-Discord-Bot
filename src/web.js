@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import express from 'express'
 import { rateLimit } from 'express-rate-limit'
 import { InputError, logError } from './discord.js'
+import { closedStatuses } from './store.js'
 import { profiles, statusLabels } from './verification-ui.js'
 
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url))
@@ -21,6 +22,17 @@ export function createWeb(config, store, bot) {
   const expectedPassword = digest(config.password)
   const sessionToken = req => req.headers.cookie?.split(';').map(entry => entry.trim())
     .find(entry => entry.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1)
+  const serializeApplication = ({ id, name, profile, status, created_at, review_channel, review_message, work_error }) => ({
+    id,
+    name,
+    profile: profiles[profile],
+    status,
+    label: statusLabels[status],
+    createdAt: created_at,
+    error: work_error,
+    canDelete: closedStatuses.includes(status),
+    url: review_message ? `https://discord.com/channels/${config.guildId}/${review_channel}/${review_message}` : null
+  })
 
   app.disable('x-powered-by')
   app.use((req, res, next) => {
@@ -37,7 +49,7 @@ export function createWeb(config, store, bot) {
 
   auth.use((req, res, next) => {
     res.set('Cache-Control', 'no-store')
-    if (req.method === 'POST' && req.get('Origin') !== config.origin) {
+    if (!['GET', 'HEAD'].includes(req.method) && req.get('Origin') !== config.origin) {
       return res.status(403).json({ error: 'Apri il pannello dal suo indirizzo configurato.' })
     }
     next()
@@ -88,20 +100,35 @@ export function createWeb(config, store, bot) {
     const overview = store.overview()
     res.json({
       ...overview,
-      recent: overview.recent.map(({ name, profile, status, created_at, review_channel, review_message, work_error }) => ({
-        name,
-        profile: profiles[profile],
-        status,
-        label: statusLabels[status],
-        createdAt: created_at,
-        error: work_error,
-        url: review_message ? `https://discord.com/channels/${config.guildId}/${review_channel}/${review_message}` : null
-      })),
+      recent: overview.recent.map(serializeApplication),
       settings: store.settings(),
       panel: store.panel(),
       bot: bot.status(),
       guildId: config.guildId
     })
+  })
+  auth.get('/applications', (req, res) => {
+    const { query = '', status = '', page = '1' } = req.query
+    if (typeof query !== 'string' || query.length > 100 ||
+        typeof status !== 'string' || (status !== '' && !Object.hasOwn(statusLabels, status)) ||
+        typeof page !== 'string' || !/^[1-9]\d{0,8}$/.test(page)) {
+      throw new InputError('Filtri delle candidature non validi.')
+    }
+    const result = store.applications({ query: query.trim(), status, page: Number(page) })
+    res.json({ ...result, items: result.items.map(serializeApplication) })
+  })
+  auth.delete('/applications/:id', async (req, res) => {
+    const { id } = req.params
+    if (!/^[a-f0-9]{24}$/.test(id)) throw new InputError('Identificativo candidatura non valido.')
+    const request = store.get(id)
+    if (request) {
+      if (!closedStatuses.includes(request.status)) {
+        return res.status(409).json({ error: 'Le candidature ancora in lavorazione non si possono eliminare.' })
+      }
+      await bot.deleteReviewMessage(request)
+      store.removeApplication(id)
+    }
+    res.status(204).end()
   })
   auth.get('/options', async (req, res) => res.json(await bot.options()))
   auth.post('/settings', async (req, res) => {
