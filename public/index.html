@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>MagiCP · Pannello Discord</title>
+  <link rel="icon" type="image/png" href="/magicp.png">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <button class="theme icon-button" type="button" id="theme" aria-label="Cambia tema" title="Cambia tema"></button>
+
+    <main class="login-page" id="login-page" hidden>
+      <section class="login-card" aria-labelledby="login-title">
+        <div class="brand">
+          <span class="brand-mark"><img src="/magicp.png" alt=""></span>
+          <strong>MagiCP</strong>
+        </div>
+        <h1 id="login-title">Accedi al pannello</h1>
+        <p class="muted">Gestione del server Discord MagiCP.</p>
+        <form id="login-form">
+          <label>Nome utente<input name="username" autocomplete="username" maxlength="100" required></label>
+          <label>Password<input type="password" name="password" autocomplete="current-password" maxlength="512" required></label>
+          <p class="message" id="login-error" role="alert" hidden></p>
+          <button type="submit" class="primary">Accedi</button>
+        </form>
+      </section>
+    </main>
+
+    <div class="workspace" id="workspace" hidden>
+      <aside class="rail">
+        <div class="brand">
+          <span class="brand-mark"><img src="/magicp.png" alt=""></span>
+          <div><strong>MagiCP</strong><small>Pannello Discord</small></div>
+        </div>
+        <nav aria-label="Pannello">
+          <a href="#panoramica" data-view="panoramica"><span class="nav-icon grid-icon" aria-hidden="true"></span>Panoramica</a>
+          <a href="#configurazione" data-view="configurazione"><span class="nav-icon settings-icon" aria-hidden="true">⚙</span>Configurazione</a>
+        </nav>
+        <div class="rail-bottom">
+          <div class="connection"><span id="connection-dot" class="dot"></span><span id="connection-label">Connessione a Discord</span></div>
+          <button id="logout" type="button" class="text-button">Esci <span aria-hidden="true">↗</span></button>
+        </div>
+      </aside>
+
+      <main class="content">
+        <header class="page-header">
+          <p class="context" id="guild-name">Discord</p>
+          <h1 id="page-title">Panoramica</h1>
+        </header>
+        <p class="message" id="app-error" role="alert" hidden></p>
+
+        <section id="overview" aria-label="Panoramica delle verifiche">
+          <div class="metrics">
+            <article class="card metric"><h2>Da valutare</h2><strong id="count-pending">—</strong></article>
+            <article class="card metric"><h2>Accettate</h2><strong id="count-accepted">—</strong></article>
+            <article class="card metric"><h2>Esterni</h2><strong id="count-external">—</strong></article>
+            <article class="card metric"><h2>Rifiutate</h2><strong id="count-rejected">—</strong></article>
+          </div>
+          <div class="card requests">
+            <div class="section-head">
+              <div><h2>Richieste recenti</h2><p class="muted">Le ultime 20 candidature, da valutare su Discord.</p></div>
+              <button type="button" class="secondary" id="refresh">Aggiorna</button>
+            </div>
+            <p class="message" id="queue-error" role="status" hidden></p>
+            <div class="table-wrap" id="table-wrap" hidden>
+              <table>
+                <thead><tr><th scope="col">Candidato</th><th scope="col">Profilo</th><th scope="col">Stato</th><th scope="col">Data</th><th scope="col"><span class="sr-only">Link</span></th></tr></thead>
+                <tbody id="request-list"></tbody>
+              </table>
+            </div>
+            <div class="empty" id="empty">
+              <span class="empty-icon" aria-hidden="true">✓</span>
+              <h3 id="empty-title">Nessuna richiesta</h3>
+              <p class="muted" id="empty-description">Le candidature arriveranno qui dopo la pubblicazione del messaggio di verifica.</p>
+              <a href="#configurazione" class="secondary" id="setup-link">Configura la verifica</a>
+            </div>
+          </div>
+        </section>
+
+        <section id="settings" aria-label="Configurazione delle verifiche" hidden>
+          <p class="message" id="settings-message" role="status" hidden></p>
+          <form id="settings-form">
+            <fieldset id="settings-fields" disabled>
+              <div class="card settings-card">
+                <h2>Canali</h2>
+                <div class="form-grid">
+                  <label>Verifica<select name="verificationChannel" required></select></label>
+                  <label>Richieste di verifica<select name="reviewChannel" required></select></label>
+                </div>
+                <p class="muted field-note">Il canale delle richieste deve essere visibile solo allo staff e al bot.</p>
+              </div>
+              <div class="card settings-card">
+                <h2>Ruoli</h2>
+                <label class="external-field">Ruolo esterno<select name="externalRole" required></select></label>
+                <div class="form-grid role-grid">
+                  <div><h3 id="approval-title">Ruoli di approvazione</h3><p class="muted">Disponibili quando lo staff preme Accetta.</p><div class="role-list" role="group" aria-labelledby="approval-title" id="approval-roles"></div></div>
+                  <div><h3 id="reviewer-title">Ruoli revisori</h3><p class="muted">Possono decidere insieme agli amministratori.</p><div class="role-list" role="group" aria-labelledby="reviewer-title" id="reviewer-roles"></div></div>
+                </div>
+                <button type="submit" class="primary">Salva configurazione</button>
+              </div>
+            </fieldset>
+          </form>
+          <div class="card settings-card publish-card">
+            <div><h2>Messaggio di verifica</h2><p class="muted" id="publish-description">Salva la configurazione per pubblicare il pulsante su Discord.</p><a id="panel-link" href="#" target="_blank" rel="noopener" hidden>Apri su Discord ↗</a></div>
+            <button type="button" class="primary" id="publish" disabled>Pubblica messaggio</button>
+          </div>
+        </section>
+      </main>
+    </div>
+    <p class="loading" id="loading" role="status">Apertura di MagiCP…</p>
+  </div>
+</body>
+</html>
