@@ -1,3 +1,5 @@
+import { icon } from './graphics.js'
+
 let activePicker
 
 export function closePicker() {
@@ -23,7 +25,7 @@ export function renderPicker(root, choices, selected, { name, multiple = false, 
   toggle.setAttribute('aria-controls', `${root.id}-menu`)
   toggle.setAttribute('aria-labelledby', `${root.id}-label ${root.id}-value`)
   value.id = `${root.id}-value`
-  toggle.append(value)
+  toggle.append(value, icon('chevron'))
   list.id = `${root.id}-menu`
   list.className = 'picker-menu'
   list.setAttribute('role', 'listbox')
@@ -39,7 +41,7 @@ export function renderPicker(root, choices, selected, { name, multiple = false, 
     option.tabIndex = -1
     option.className = 'picker-option'
     option.setAttribute('role', 'option')
-    option.textContent = label
+    option.append(document.createTextNode(label), icon('check'))
     option.addEventListener('click', () => {
       if (!multiple) selectedIds.clear()
       if (selectedIds.has(id)) selectedIds.delete(id)

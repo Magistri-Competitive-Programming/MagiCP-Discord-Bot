@@ -1,3 +1,5 @@
+import { icon } from './graphics.js'
+import { renderActivity, renderDistribution } from './charts.js'
 import { closePicker, renderPicker } from './picker.js'
 
 const byId = id => document.getElementById(id)
@@ -5,9 +7,7 @@ const loginForm = byId('login-form')
 const settingsForm = byId('settings-form')
 const fields = byId('settings-fields')
 const nav = [...document.querySelectorAll('[data-view]')]
-const dark = matchMedia('(prefers-color-scheme: dark)')
 const day = new Intl.DateTimeFormat('it-IT', { dateStyle: 'medium', timeZone: 'Europe/Rome' })
-const chartDay = new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short', timeZone: 'UTC' })
 const numbers = new Intl.NumberFormat('it-IT')
 const titles = { panoramica: 'Panoramica', candidature: 'Candidature', configurazione: 'Configurazione' }
 const filters = [
@@ -28,18 +28,6 @@ let applicationPage = 1
 let applicationQuery = ''
 let deleteTarget
 
-function currentTheme() {
-  return localStorage.getItem('magicp-theme') ?? (dark.matches ? 'dark' : 'light')
-}
-
-function renderTheme() {
-  const isDark = currentTheme() === 'dark'
-  document.documentElement.dataset.theme = isDark ? 'dark' : 'light'
-  byId('theme').textContent = isDark ? '☀' : '☾'
-  byId('theme').title = isDark ? 'Attiva tema chiaro' : 'Attiva tema scuro'
-  byId('theme').setAttribute('aria-label', byId('theme').title)
-}
-
 function message(id, value = '', success = false) {
   const element = byId(id)
   element.textContent = value
@@ -49,6 +37,7 @@ function message(id, value = '', success = false) {
 
 function showLogin() {
   authenticated = false
+  document.title = 'Accedi · MagiCP'
   state = undefined
   viewVersion++
   closePicker()
@@ -65,6 +54,8 @@ function showLogin() {
   byId('panel-link').removeAttribute('href')
   byId('verification-action').removeAttribute('href')
   byId('loading').hidden = true
+  byId('workspace-nav').hidden = true
+  byId('logout').hidden = true
   byId('workspace').hidden = true
   byId('login-page').hidden = false
   loginForm.reset()
@@ -106,7 +97,8 @@ function requestRow(request, allowDelete = false) {
   const action = element('td')
   const actions = element('div', '', 'row-actions')
   if (request.url) {
-    const link = element('a', '↗', 'request-link')
+    const link = element('a', '', 'icon-button request-link')
+    link.append(icon('external'))
     link.href = request.url
     link.target = '_blank'
     link.rel = 'noopener'
@@ -115,9 +107,9 @@ function requestRow(request, allowDelete = false) {
     actions.append(link)
   }
   if (allowDelete && request.canDelete) {
-    const remove = element('button', '', 'request-link delete-action')
+    const remove = element('button', '', 'icon-button delete-action')
     remove.type = 'button'
-    remove.append(element('span', '', 'trash-icon'))
+    remove.append(icon('trash'))
     remove.setAttribute('aria-label', `Elimina la candidatura di ${request.name}`)
     remove.title = 'Elimina candidatura'
     remove.addEventListener('click', () => {
@@ -136,51 +128,12 @@ function requestRow(request, allowDelete = false) {
   return row
 }
 
-function renderActivity(activity) {
-  const levels = 8
-  const peak = Math.max(levels, ...activity.map(point => point.total))
-  byId('activity-total').textContent = numbers.format(activity.reduce((total, point) => total + point.total, 0))
-  byId('activity-chart').replaceChildren(...activity.map(({ day: date, total }) => {
-    const column = element('div', '', 'chart-day')
-    const label = chartDay.format(new Date(date))
-    const count = Math.ceil(total / peak * levels)
-    const detail = `${label} · ${total} ${total === 1 ? 'candidatura' : 'candidature'}`
-    column.tabIndex = 0
-    const cells = element('div', '', 'chart-cells')
-    cells.setAttribute('aria-hidden', 'true')
-    cells.append(...Array.from({ length: levels }, (_, index) =>
-      element('span', '', index >= levels - count ? 'chart-cell filled' : 'chart-cell')))
-    const caption = element('span', label, 'chart-date')
-    const tip = element('span', detail, 'chart-tip')
-    caption.setAttribute('aria-hidden', 'true')
-    tip.setAttribute('aria-hidden', 'true')
-    column.append(cells, element('span', detail, 'sr-only'), caption, tip)
-    return column
-  }))
-}
-
 function renderOverview() {
   const { counts, recent, errors, bot, activity } = state
   byId('guild-name').textContent = bot.guildName ?? 'Discord'
   byId('connection-label').textContent = bot.ready ? 'Discord connesso' : 'Discord scollegato'
   byId('connection-dot').classList.toggle('online', bot.ready)
-  const statuses = [
-    ['pending', 'Da valutare', (counts.pending ?? 0) + (counts.processing ?? 0)],
-    ['accepted', 'Accettate', counts.accepted ?? 0],
-    ['external', 'Esterni', counts.external ?? 0],
-    ['rejected', 'Rifiutate', counts.rejected ?? 0]
-  ]
-  const total = statuses.reduce((sum, [, , count]) => sum + count, 0)
-  byId('breakdown').replaceChildren(...statuses.map(([status, label, count]) => {
-    byId(`count-${status}`).textContent = numbers.format(count)
-    const row = element('li', '', status)
-    const bar = element('progress')
-    bar.max = total || 1
-    bar.value = count
-    bar.setAttribute('aria-label', label)
-    row.append(element('span', label), element('strong', numbers.format(count)), bar)
-    return row
-  }))
+  renderDistribution(counts)
   renderActivity(activity)
   message('queue-error', errors ? 'Alcune operazioni Discord sono in attesa di un nuovo tentativo. Controlla i dettagli nelle candidature.' : '')
   byId('request-list').replaceChildren(...recent.map(request => requestRow(request)))
@@ -201,9 +154,7 @@ function renderPublish() {
   const discordUrl = hasCurrentPanel ? `https://discord.com/channels/${guildId}/${panel.channel}/${panel.message}` : null
   if (discordUrl) byId('panel-link').href = discordUrl
   const action = byId('verification-action')
-  const arrow = element('span', '↗')
-  arrow.setAttribute('aria-hidden', 'true')
-  action.replaceChildren(discordUrl ? 'Apri su Discord' : 'Configura la verifica', arrow)
+  action.replaceChildren(icon(discordUrl ? 'chat' : 'controls'), discordUrl ? 'Apri su Discord' : 'Configura la verifica')
   action.href = discordUrl ?? '#configurazione'
   action.target = discordUrl ? '_blank' : ''
   action.rel = discordUrl ? 'noopener' : ''
@@ -273,7 +224,7 @@ async function loadView() {
   byId('applications').hidden = view !== 'candidature'
   byId('settings').hidden = view !== 'configurazione'
   byId('page-title').textContent = titles[view]
-  byId('breadcrumb').textContent = titles[view]
+  document.title = titles[view] + ' · MagiCP'
   for (const link of nav) {
     if (link.dataset.view === view) link.setAttribute('aria-current', 'page')
     else link.removeAttribute('aria-current')
@@ -308,16 +259,17 @@ async function showWorkspace() {
   byId('loading').hidden = true
   byId('login-page').hidden = true
   byId('workspace').hidden = false
+  byId('workspace-nav').hidden = false
+  byId('logout').hidden = false
   await loadView()
 }
 
-byId('theme').addEventListener('click', () => {
-  localStorage.setItem('magicp-theme', currentTheme() === 'dark' ? 'light' : 'dark')
-  renderTheme()
+window.addEventListener('hashchange', () => {
+  if (!authenticated) return
+  void loadView()
+  byId('page-title').focus({ preventScroll: true })
+  window.scrollTo(0, 0)
 })
-dark.addEventListener('change', renderTheme)
-renderTheme()
-window.addEventListener('hashchange', loadView)
 byId('refresh').addEventListener('click', loadView)
 
 renderStatusPicker()

@@ -5,186 +5,215 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>MagiCP · Pannello Discord</title>
-  <link rel="icon" type="image/png" href="/magicp.png">
+  <link rel="icon" href="/magicp.png" type="image/png">
   <link rel="preload" href="/assets/manrope.woff2" as="font" type="font/woff2" crossorigin>
+  <script src="/theme.js"></script>
   <link rel="stylesheet" href="/style.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
-  <div class="shell">
-    <button class="theme icon-button" type="button" id="theme" aria-label="Cambia tema" title="Cambia tema"></button>
-
-    <main class="login-page" id="login-page" hidden>
-      <div class="login-frame">
-        <div class="login-brand">
-          <img src="/magicp.png" alt="MagiCP">
-          <p>Magistri Competitive Programming</p>
-        </div>
-        <section class="login-card" aria-labelledby="login-title">
-          <h1 id="login-title">Accedi al pannello</h1>
-          <p class="muted">Area staff del server Discord.</p>
-          <form id="login-form">
-            <label>Nome utente<input name="username" autocomplete="username" maxlength="100" required></label>
-            <label>Password<input type="password" name="password" autocomplete="current-password" maxlength="512" required></label>
-            <p class="message" id="login-error" role="alert" hidden></p>
-            <button type="submit" class="primary">Accedi <span aria-hidden="true">→</span></button>
-          </form>
-        </section>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand" aria-label="MagiCP">
+        <span class="brand-mark" aria-hidden="true"><img src="/magicp.png" alt=""></span>
+        <span>MagiCP</span>
       </div>
-    </main>
-
-    <div class="workspace" id="workspace" hidden>
-      <aside class="rail">
-        <div class="rail-inner">
-          <div class="brand">
-            <span class="brand-mark"><img src="/magicp.png" alt=""></span>
-            <div><strong>MagiCP</strong><small>Pannello Discord</small></div>
-          </div>
-          <nav aria-label="Pannello">
-            <a href="#panoramica" data-view="panoramica"><span class="nav-icon grid-icon" aria-hidden="true"></span>Panoramica</a>
-            <a href="#candidature" data-view="candidature"><span class="nav-icon file-icon" aria-hidden="true"></span>Candidature</a>
-            <a href="#configurazione" data-view="configurazione"><span class="nav-icon settings-icon" aria-hidden="true"></span>Configurazione</a>
-          </nav>
-          <div class="rail-bottom">
-            <div class="connection" role="status"><span id="connection-dot" class="dot"></span><span id="connection-label">Connessione a Discord</span></div>
-            <button id="logout" type="button" class="text-button"><span class="logout-icon" aria-hidden="true">↪</span>Esci</button>
-          </div>
-        </div>
-      </aside>
-      <main class="content">
-        <div class="server-bar">
-          <span id="guild-name">Discord</span><span aria-hidden="true">/</span><b id="breadcrumb">Panoramica</b>
-        </div>
-        <div class="page-body">
-          <header class="page-header">
-            <h1 id="page-title">Panoramica</h1>
-            <div class="page-actions" id="overview-actions">
-              <button type="button" class="secondary" id="refresh"><span aria-hidden="true">↻</span> Aggiorna</button>
-              <a class="primary" href="#configurazione" id="verification-action">Configura la verifica</a>
-            </div>
-          </header>
-          <p class="message" id="app-error" role="alert" hidden></p>
-
-          <section id="overview" class="dashboard-grid" aria-label="Panoramica delle verifiche">
-            <article class="card metric pending"><h2>Da valutare</h2><span class="metric-icon" aria-hidden="true">◷</span><strong id="count-pending">—</strong></article>
-            <article class="card metric accepted"><h2>Accettate</h2><span class="metric-icon" aria-hidden="true">✓</span><strong id="count-accepted">—</strong></article>
-            <article class="card metric external"><h2>Esterni</h2><span class="metric-icon" aria-hidden="true">↗</span><strong id="count-external">—</strong></article>
-            <article class="card metric rejected"><h2>Rifiutate</h2><span class="metric-icon" aria-hidden="true">×</span><strong id="count-rejected">—</strong></article>
-
-            <article class="card activity">
-              <header class="widget-head"><h2>Andamento candidature</h2><span>Ultimi 14 giorni</span></header>
-              <div class="widget-body">
-                <p class="activity-total"><strong id="activity-total">—</strong> candidature</p>
-                <div class="chart" id="activity-chart"></div>
-              </div>
-            </article>
-            <article class="card breakdown">
-              <header class="widget-head"><h2>Stato delle candidature</h2></header>
-              <ul class="widget-body breakdown-list" id="breakdown"></ul>
-            </article>
-
-            <article class="card requests">
-              <header class="widget-head"><h2>Candidature recenti</h2><a class="text-link" href="#candidature">Vedi tutte <span aria-hidden="true">→</span></a></header>
-              <p class="message" id="queue-error" role="status" hidden></p>
-              <div class="table-wrap" id="recent-table" hidden>
-                <table>
-                  <thead><tr><th scope="col">Candidato</th><th class="request-profile" scope="col">Profilo</th><th scope="col">Stato</th><th class="request-date" scope="col">Data</th><th scope="col"><span class="sr-only">Azioni</span></th></tr></thead>
-                  <tbody id="request-list"></tbody>
-                </table>
-              </div>
-              <div class="empty" id="recent-empty">
-                <h3>Nessuna candidatura</h3>
-                <p class="muted">Le richieste inviate da Discord compaiono qui.</p>
-              </div>
-            </article>
-          </section>
-
-          <section id="applications" aria-label="Candidature" hidden>
-            <article class="card application-list">
-              <div class="widget-head table-tools">
-                <form class="search-form" id="application-search">
-                  <label class="sr-only" for="query">Cerca per nome o ID Discord</label>
-                  <input type="search" id="query" maxlength="100" placeholder="Cerca per nome o ID Discord">
-                  <button type="submit" class="secondary">Cerca</button>
-                </form>
-                <div class="filter">
-                  <span class="sr-only" id="status-picker-label">Filtra per stato</span>
-                  <div class="picker" id="status-picker"></div>
-                </div>
-              </div>
-              <p class="message" id="application-message" role="status" hidden></p>
-              <div class="table-wrap" id="applications-table" hidden>
-                <table>
-                  <thead><tr><th scope="col">Candidato</th><th class="request-profile" scope="col">Profilo</th><th scope="col">Stato</th><th class="request-date" scope="col">Data</th><th scope="col"><span class="sr-only">Azioni</span></th></tr></thead>
-                  <tbody id="application-rows"></tbody>
-                </table>
-              </div>
-              <div class="empty" id="applications-empty" hidden><h3>Nessuna candidatura trovata</h3></div>
-              <footer class="table-footer">
-                <p id="application-count" role="status"></p>
-                <div class="pager" id="pager" hidden>
-                  <button type="button" class="secondary" id="previous-page" aria-label="Pagina precedente">←</button>
-                  <span id="page-number"></span>
-                  <button type="button" class="secondary" id="next-page" aria-label="Pagina successiva">→</button>
-                </div>
-              </footer>
-            </article>
-          </section>
-
-          <section id="settings" aria-label="Configurazione delle verifiche" hidden>
-            <p class="message" id="settings-message" role="status" hidden></p>
-            <div class="settings-grid">
-              <form id="settings-form">
-                <fieldset id="settings-fields" disabled>
-                  <article class="card settings-card">
-                    <header class="widget-head"><h2>Canali Discord</h2></header>
-                    <div class="widget-body">
-                      <div class="form-grid">
-                        <div><span class="field-label" id="verificationChannel-label">Verifica</span><div class="picker" id="verificationChannel"></div></div>
-                        <div><span class="field-label" id="reviewChannel-label">Richieste di verifica</span><div class="picker" id="reviewChannel"></div></div>
-                      </div>
-                      <p class="muted field-note">Il canale delle richieste è riservato allo staff e al bot.</p>
-                    </div>
-                  </article>
-                  <article class="card settings-card">
-                    <header class="widget-head"><h2>Ruoli</h2></header>
-                    <div class="widget-body">
-                      <div class="external-field"><span class="field-label" id="externalRole-label">Ruolo esterno</span><div class="picker" id="externalRole"></div></div>
-                      <div class="form-grid role-grid">
-                        <div><span class="field-label" id="approvalRoles-label">Ruoli di approvazione</span><div class="picker" id="approvalRoles"></div><p class="muted field-note">Disponibili quando lo staff preme Accetta.</p></div>
-                        <div><span class="field-label" id="reviewerRoles-label">Ruoli revisori</span><div class="picker" id="reviewerRoles"></div><p class="muted field-note">Possono decidere insieme agli amministratori.</p></div>
-                      </div>
-                    </div>
-                  </article>
-                  <div class="form-actions"><button type="submit" class="primary">Salva configurazione</button></div>
-                </fieldset>
-              </form>
-              <aside class="card publish-card">
-                <header class="widget-head"><h2>Messaggio di verifica</h2></header>
-                <div class="widget-body">
-                  <p class="muted" id="publish-description">Salva la configurazione per pubblicare il pulsante su Discord.</p>
-                  <button type="button" class="primary" id="publish" disabled>Pubblica messaggio</button>
-                  <a id="panel-link" href="#" target="_blank" rel="noopener" hidden>Apri su Discord ↗</a>
-                </div>
-              </aside>
-            </div>
-          </section>
-        </div>
-      </main>
+      <nav id="workspace-nav" aria-label="Pannello" hidden>
+          <a href="#panoramica" data-view="panoramica"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#overview"/></svg><span>Panoramica</span></a>
+          <a href="#candidature" data-view="candidature"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#inbox"/></svg><span>Candidature</span></a>
+          <a href="#configurazione" data-view="configurazione"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#controls"/></svg><span>Configurazione</span></a>
+      </nav>
+      <div class="utilities">
+        <button class="icon-button" type="button" id="theme" aria-label="Cambia tema" title="Cambia tema">
+          <svg class="icon" aria-hidden="true" focusable="false"><use id="theme-glyph" href="/icons.svg#moon"/></svg>
+        </button>
+        <button class="icon-button" type="button" id="logout" aria-label="Esci" title="Esci" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#logout"/></svg></button>
+      </div>
     </div>
+  </header>
 
-    <dialog id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-description">
-      <form id="delete-form">
-        <h2 id="delete-title">Eliminare la candidatura?</h2>
-        <p id="delete-description"></p>
-        <p class="message" id="delete-error" role="alert" hidden></p>
-        <div class="dialog-actions">
-          <button type="button" class="secondary" id="cancel-delete" autofocus>Annulla</button>
-          <button type="submit" class="danger" id="confirm-delete">Elimina</button>
+  <main class="login-page" id="login-page" hidden>
+    <div class="login-layout">
+      <div class="login-art">
+        <svg class="contours" viewBox="0 0 460 440" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+          <defs><path id="orbit" d="M-118 103C-55 94 2 10 99 30S201 193 326 128 447 105 556 137"/></defs>
+          <g fill="none" stroke="currentColor" stroke-width="1">
+            <use href="#orbit" transform="translate(0 -38)"/>
+            <use href="#orbit" transform="translate(0 -26)"/>
+            <use href="#orbit" transform="translate(0 -14)"/>
+            <use href="#orbit" transform="translate(0 -2)"/>
+            <use href="#orbit" transform="translate(0 10)"/>
+            <use href="#orbit" transform="translate(0 22)"/>
+            <use href="#orbit" transform="translate(0 34)"/>
+            <use href="#orbit" transform="translate(0 46)"/>
+            <use href="#orbit" transform="translate(0 58)"/>
+            <use href="#orbit" transform="translate(0 70)"/>
+            <use href="#orbit" transform="translate(0 82)"/>
+            <use href="#orbit" transform="translate(0 94)"/>
+            <use href="#orbit" transform="translate(0 106)"/>
+            <use href="#orbit" transform="translate(0 118)"/>
+            <use href="#orbit" transform="translate(0 130)"/>
+            <use href="#orbit" transform="translate(0 142)"/>
+            <use href="#orbit" transform="translate(0 154)"/>
+            <use href="#orbit" transform="translate(0 166)"/>
+            <use href="#orbit" transform="translate(0 178)"/>
+            <use href="#orbit" transform="translate(0 190)"/>
+            <use href="#orbit" transform="translate(0 202)"/>
+            <use href="#orbit" transform="translate(0 214)"/>
+            <use href="#orbit" transform="translate(0 226)"/>
+          </g>
+        </svg>
+        <img src="/magicp.png" alt="MagiCP" class="login-logo">
+        <p>Magistri Competitive Programming</p>
+      </div>
+      <section class="login-card" aria-labelledby="login-title">
+        <h1 id="login-title">Accedi al pannello</h1>
+        <p class="intro">Area riservata allo staff del server Discord.</p>
+        <form id="login-form">
+          <label for="username">Nome utente</label>
+          <div class="input-wrap"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#user"/></svg><input id="username" name="username" autocomplete="username" maxlength="100" required></div>
+          <label for="password">Password</label>
+          <div class="input-wrap"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#lock"/></svg><input id="password" type="password" name="password" autocomplete="current-password" maxlength="512" required></div>
+          <p class="message" id="login-error" role="alert" hidden></p>
+          <button type="submit" class="button primary">Accedi</button>
+        </form>
+      </section>
+    </div>
+  </main>
+
+  <main class="workspace" id="workspace" hidden>
+    <header class="page-heading">
+      <div>
+        <h1 id="page-title" tabindex="-1">Panoramica</h1>
+        <div class="server-info">
+          <span id="guild-name">Discord</span>
+          <span class="connection" role="status"><span id="connection-dot"></span><span id="connection-label">Connessione a Discord</span></span>
         </div>
-      </form>
-    </dialog>
-    <p class="loading" id="loading" role="status">Apertura di MagiCP…</p>
-  </div>
+      </div>
+      <div class="page-actions" id="overview-actions">
+        <button type="button" class="button secondary" id="refresh"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#refresh"/></svg>Aggiorna</button>
+        <a class="button primary" href="#configurazione" id="verification-action">Configura la verifica</a>
+      </div>
+    </header>
+    <p class="message" id="app-error" role="alert" hidden></p>
+
+    <section id="overview" class="overview-grid" aria-label="Panoramica delle verifiche">
+      <article class="surface activity">
+        <header class="section-head">
+          <h2>Andamento candidature</h2>
+          <span class="period"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#calendar"/></svg>Ultimi 14 giorni</span>
+        </header>
+        <p class="activity-total"><strong id="activity-total">—</strong><span id="activity-caption">ricevute nel periodo</span></p>
+        <p class="sr-only" id="chart-help">Usa le frecce sinistra e destra per esplorare i giorni.</p>
+        <div class="chart" id="activity-chart" role="group" aria-label="Candidature ricevute per giorno" aria-describedby="chart-help"></div>
+      </article>
+      <article class="surface distribution">
+        <header class="section-head"><h2>Stato candidature</h2></header>
+        <div class="ring">
+          <svg id="state-ring" viewBox="0 0 120 120" aria-hidden="true"><circle class="track" cx="60" cy="60" r="51"/></svg>
+          <p><strong id="state-total">—</strong><span>in totale</span></p>
+        </div>
+        <ul class="legend" id="breakdown"></ul>
+      </article>
+      <article class="surface requests">
+        <header class="section-head"><h2>Candidature recenti</h2><a class="button secondary compact" href="#candidature">Vedi tutte</a></header>
+        <p class="message" id="queue-error" role="status" hidden></p>
+        <div class="table-wrap" id="recent-table" hidden>
+            <table>
+              <thead><tr><th scope="col">Candidato</th><th scope="col" class="request-profile">Profilo</th><th scope="col">Stato</th><th scope="col" class="request-date">Data</th><th scope="col"><span class="sr-only">Azioni</span></th></tr></thead>
+              <tbody id="request-list"></tbody>
+            </table>
+          </div>
+        <div class="empty" id="recent-empty" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#inbox"/></svg><h3>Nessuna candidatura</h3><p>Le richieste inviate da Discord compaiono qui.</p></div>
+      </article>
+    </section>
+
+    <section id="applications" aria-label="Candidature" hidden>
+      <article class="surface application-list">
+        <div class="table-tools">
+          <form class="search-form" id="application-search">
+            <label class="sr-only" for="query">Cerca per nome o ID Discord</label>
+            <div class="input-wrap"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#search"/></svg><input type="search" id="query" maxlength="100" placeholder="Nome o ID Discord"></div>
+            <button type="submit" class="button secondary">Cerca</button>
+          </form>
+          <div class="filter"><span class="sr-only" id="status-picker-label">Filtra per stato</span><div class="picker" id="status-picker"></div></div>
+        </div>
+        <p class="message" id="application-message" role="status" hidden></p>
+        <div class="table-wrap" id="applications-table" hidden>
+            <table>
+              <thead><tr><th scope="col">Candidato</th><th scope="col" class="request-profile">Profilo</th><th scope="col">Stato</th><th scope="col" class="request-date">Data</th><th scope="col"><span class="sr-only">Azioni</span></th></tr></thead>
+              <tbody id="application-rows"></tbody>
+            </table>
+          </div>
+        <div class="empty" id="applications-empty" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#search"/></svg><h3>Nessuna candidatura trovata</h3></div>
+        <footer class="table-footer">
+          <p id="application-count" role="status"></p>
+          <div class="pager" id="pager" hidden>
+            <button type="button" class="icon-button" id="previous-page" aria-label="Pagina precedente"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#back"/></svg></button>
+            <span id="page-number"></span>
+            <button type="button" class="icon-button" id="next-page" aria-label="Pagina successiva"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#next"/></svg></button>
+          </div>
+        </footer>
+      </article>
+    </section>
+
+    <section id="settings" aria-label="Configurazione delle verifiche" hidden>
+      <p class="message" id="settings-message" role="status" hidden></p>
+      <div class="settings-grid">
+        <form id="settings-form">
+          <fieldset id="settings-fields" disabled>
+            <section class="surface settings-card">
+              <header class="section-head"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#hash"/></svg><h2>Canali Discord</h2></header>
+              <div class="setting-row">
+                  <div><span class="field-label" id="verificationChannel-label">Verifica</span><p class="field-note">Qui gli studenti aprono il modulo.</p></div>
+                  <div class="picker" id="verificationChannel"></div>
+                </div>
+              <div class="setting-row">
+                  <div><span class="field-label" id="reviewChannel-label">Richieste di verifica</span><p class="field-note">Canale riservato allo staff e al bot.</p></div>
+                  <div class="picker" id="reviewChannel"></div>
+                </div>
+            </section>
+            <section class="surface settings-card">
+              <header class="section-head"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#shield"/></svg><h2>Ruoli</h2></header>
+              <div class="setting-row">
+                  <div><span class="field-label" id="externalRole-label">Ruolo esterno</span><p class="field-note">Assegnato a chi viene accettato come esterno.</p></div>
+                  <div class="picker" id="externalRole"></div>
+                </div>
+              <div class="setting-row">
+                  <div><span class="field-label" id="approvalRoles-label">Ruoli di approvazione</span><p class="field-note">Disponibili allo staff quando accetta una richiesta.</p></div>
+                  <div class="picker" id="approvalRoles"></div>
+                </div>
+              <div class="setting-row">
+                  <div><span class="field-label" id="reviewerRoles-label">Ruoli revisori</span><p class="field-note">Possono decidere insieme agli amministratori.</p></div>
+                  <div class="picker" id="reviewerRoles"></div>
+                </div>
+            </section>
+            <div class="form-actions"><button type="submit" class="button primary"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#check"/></svg>Salva configurazione</button></div>
+          </fieldset>
+        </form>
+        <aside class="surface publish-card">
+          <div class="publish-icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#chat"/></svg></div>
+          <h2>Messaggio di verifica</h2>
+          <p id="publish-description">Salva la configurazione per pubblicare il pulsante su Discord.</p>
+          <button type="button" class="button secondary" id="publish" disabled>Pubblica messaggio</button>
+          <a class="quiet-link" id="panel-link" target="_blank" rel="noopener" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#external"/></svg>Apri su Discord</a>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-description">
+    <form id="delete-form">
+      <div class="delete-icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="/icons.svg#trash"/></svg></div>
+      <h2 id="delete-title">Eliminare la candidatura?</h2>
+      <p id="delete-description"></p>
+      <p class="message" id="delete-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" class="button secondary" id="cancel-delete" autofocus>Annulla</button>
+        <button type="submit" class="button danger" id="confirm-delete">Elimina</button>
+      </div>
+    </form>
+  </dialog>
+  <p class="loading" id="loading" role="status">Apertura di MagiCP…</p>
 </body>
 </html>
